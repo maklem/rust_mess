@@ -27,7 +27,7 @@ jobs:
       uses: esp-rs/xtensa-toolchain@67649b28a0139171102259d9982f93106aa2b54a
       with:
         default: true
-        version: "1.66.0"
+        version: "1.89.0"
         ldproxy: true
 
     - name: Build project esp
