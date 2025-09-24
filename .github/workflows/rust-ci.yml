@@ -2,8 +2,6 @@ name: Rust CI
 
 on:
   push:
-    branches:
-      - main
   pull_request:
     branches:
       - main
@@ -19,11 +17,18 @@ jobs:
     - name: Set up Rust
       uses: actions-rust-lang/setup-rust-toolchain@02be93da58aa71fb456aa9c43b301149248829d8
       with:
-        toolchain: stable,esp
+        toolchain: stable
 
     - name: Run tests for mess_lib
       working-directory: mess_lib
       run: cargo test
+
+    - name: Install Rust for Xtensa
+      uses: esp-rs/xtensa-toolchain@67649b28a0139171102259d9982f93106aa2b54a
+      with:
+        default: true
+        version: "1.66.0"
+        ldproxy: true
 
     - name: Build project esp
       working-directory: esp
