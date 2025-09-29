@@ -1,48 +1,66 @@
 [package]
-name = "esp"
+name = "mess_esp"
 version = "0.1.0"
 authors = ["Dr. Marco Klement <marco-klement-git@leuchtstark.dev>"]
 edition = "2021"
 resolver = "2"
-rust-version = "1.77"
+rust-version = "1.86"
 
 [[bin]]
 name = "esp"
-harness = false # do not use the built in cargo test harness -> resolve rust-analyzer errors
+path = "./src/main.rs"
+test = false
+
+[[test]]
+harness = false
+bench = false
+name    = "hello_test"
 
 [profile.release]
 opt-level = "s"
 
 [profile.dev]
-debug = true    # Symbols are nice and they don't increase the size on Flash
+debug = true
 opt-level = "z"
 
 [features]
 default = []
 
-experimental = ["esp-idf-svc/experimental"]
-
 [dependencies]
-log = "0.4"
-esp-idf-svc = "0.51"
-mess_lib = {path = "../mess_lib"}
+esp-bootloader-esp-idf = { version = "0.2.0", features = ["esp32"] }
+esp-hal                = { version = "=1.0.0-rc.0", features = ["esp32", "unstable"] }
+rtt-target = "0.6.1"
+esp-alloc = "0.8.0"
+esp-wifi = { version = "0.15.0", features = [
+  "ble",
+  "builtin-scheduler",
+  "coex",
+  "esp-alloc",
+  "esp32",
+  "smoltcp",
+  "wifi",
+] }
+mess_lib               = {path = "../mess_lib"}
+smoltcp = { version = "0.12.0", default-features = false, features = [
+  "medium-ethernet",
+  "multicast",
+  "proto-dhcpv4",
+  "proto-dns",
+  "proto-ipv4",
+  "socket-dns",
+  "socket-icmp",
+  "socket-raw",
+  "socket-tcp",
+  "socket-udp",
+] }
+bleps = { git = "https://github.com/bjoernQ/bleps", package = "bleps", rev = "a5148d8ae679e021b78f53fd33afb8bb35d0b62e", features = [
+  "async",
+  "macros",
+] }
+critical-section = "1.2.0"
 
-# --- Optional Embassy Integration ---
-# esp-idf-svc = { version = "0.51", features = ["critical-section", "embassy-time-driver", "embassy-sync"] }
-
-# If you enable embassy-time-driver, you MUST also add one of:
-
-# a) Standalone Embassy libs ( embassy-time, embassy-sync etc) with a foreign async runtime:
-# embassy-time = { version = "0.4.0", features = ["generic-queue-8"] } # NOTE: any generic-queue variant will work
-
-# b) With embassy-executor:
-# embassy-executor = { version = "0.7", features = ["executor-thread", "arch-std"] }
-
-# NOTE: if you use embassy-time with embassy-executor you don't need the generic-queue-8 feature
-
-# --- Temporary workaround for embassy-executor < 0.8 ---
-# esp-idf-svc = { version = "0.51", features = ["embassy-time-driver", "embassy-sync"] }
-# critical-section = { version = "1.1", features = ["std"], default-features = false }
+[dev-dependencies]
+embedded-test = { version = "0.6.0", features = ["xtensa-semihosting"] }
 
 [build-dependencies]
 embuild = "0.33"
