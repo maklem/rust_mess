@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "preLaunchTask": "Build ESP32",
+      "type": "probe-rs-debug",
+      "request": "launch",
+      "name": "probe_rs Executable Test",
+      "flashingConfig": {
+        "flashingEnabled": true,
+      },
+      "chip": "esp32",
+      "coreConfigs": [
+        {
+          "programBinary": "${workspaceFolder}/esp/target/xtensa-esp32-none-elf/debug/esp"
+        }
+      ],
+      "cwd": "${workspaceFolder}/esp"
+    }
+  ]
+}

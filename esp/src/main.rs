@@ -46,7 +46,8 @@ fn main() -> ! {
         while delay_start.elapsed() < Duration::from_millis(500) {}
         led_pin.set_high();
         while delay_start.elapsed() < Duration::from_millis(1000) {}
-        led_pin.set_low();    }
+        led_pin.set_low();
+    }
 
     // for inspiration have a look at the examples at https://github.com/esp-rs/esp-hal/tree/esp-hal-v1.0.0-rc.0/examples/src/bin
 }
