@@ -5,7 +5,7 @@
       "preLaunchTask": "Build ESP32",
       "type": "probe-rs-debug",
       "request": "launch",
-      "name": "probe_rs Executable Test",
+      "name": "ESP: Run w/ Debugger",
       "flashingConfig": {
         "flashingEnabled": true,
       },

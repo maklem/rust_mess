@@ -6,6 +6,8 @@
 * ESP-PROG for JTAG
 * ⚠️ some boards (i.e. ESP32-C3, ESP32-S3) have JTAG-to-USB on board, thus no external JTAG interface is needed
 
+![photo of wiring ESP-WROOM-32 to ESP-PROG](IMG_wiring.jpg)
+
 ## Software
 
 * cargo
