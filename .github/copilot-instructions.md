@@ -3,22 +3,39 @@
 ## Project Overview
 This repository contains two primary components:
 
-1. **`esp/`**: A Rust-based embedded project targeting ESP32 devices. It includes the main application logic in `src/main.rs` and uses the `esp-idf` ecosystem for hardware abstraction and system services.
-2. **`mess_lib/`**: A Rust library (`lib.rs`) that provides reusable functionality for the `esp` project and potentially other projects. It is structured as a standalone library crate.
+1. **`esp/`**: A Rust-based embedded project targeting ESP32 devices. It is configured with Rust 1.86 and includes:
+   - Main application logic in `src/main.rs`
+   - Hardware testing support in `tests/hello_test.rs`
+   - ESP-IDF ecosystem integration for hardware abstraction
+   - Configured for no-std embedded development
+
+2. **`mess_lib/`**: A Rust 2024 edition library crate that provides:
+   - Core functionality in `src/lib.rs`
+   - Modular test infrastructure in `tests/hello_test.rs`
+   - Clean separation of common code for reuse
 
 ## Architecture and Data Flow
-- The `esp` project is the entry point for the embedded application. It interacts with hardware peripherals and system services via the `esp-idf` HAL (Hardware Abstraction Layer).
-- The `mess_lib` crate encapsulates shared logic and utilities, promoting modularity and reusability.
-- Communication between components is achieved through Rust's module and crate system, ensuring type safety and clear boundaries.
+- The `esp` project serves as the embedded application entry point with:
+  - Direct ESP32 hardware interactions
+  - Integration with ESP-IDF HAL for hardware abstraction
+  - No-std compatibility for embedded deployment
+- The `mess_lib` crate provides:
+  - Reusable functionality for the ESP32 project
+  - Clear API boundaries through the Rust module system
+  - Modern Rust 2024 features for improved development
+- Inter-component communication follows Rust's strict type system and module boundaries
 
 ## Developer Workflows
 
 ### Building the Project
-- To build the `esp` project, use the following command:
+- To build the `esp` project:
   ```sh
   cargo build
   ```
-  Ensure that the appropriate toolchain for ESP32 development is installed (e.g., `espup` or `esp-idf` setup).
+  The project requires:
+  - ESP32 development toolchain
+  - WiFi credentials (set via `WIFI_SSID` and `WIFI_PASS` environment variables)
+  - Rust 1.86 or compatible version
 
 - To build the `mess_lib` library:
   ```sh
@@ -26,41 +43,43 @@ This repository contains two primary components:
   ```
 
 ### Running Tests
+- Hardware tests for `esp` are in `tests/hello_test.rs` (non-standard harness)
 - Unit tests for `mess_lib` can be executed with:
   ```sh
   cargo test --manifest-path=mess_lib/Cargo.toml
   ```
-- Integration tests are located in `mess_lib/tests/` and can be run similarly.
+- Integration tests are in both `esp/tests/` and `mess_lib/tests/`
 
 ### Debugging
-- Use `cargo run` for debugging the `esp` project. Ensure the target device is connected and properly configured.
-- For `mess_lib`, standard Rust debugging tools (e.g., `gdb`, `lldb`) can be used.
+- Hardware debugging guidance is provided in `docs/hardware-debugging.md`
+- Visual wiring instructions are available in `docs/IMG_wiring.jpg`
+- For `mess_lib`, standard Rust debugging tools (e.g., `gdb`, `lldb`) can be used
 
 ## Project-Specific Conventions
-- Follow the Rust module organization pattern: public APIs are exposed via `lib.rs` in `mess_lib`.
-- Use `sdkconfig.defaults` in `esp` to configure ESP32-specific settings.
-- Avoid hardcoding values; use constants or configuration files where possible.
+- No-std environment for the ESP32 project
+- Custom test harness for hardware tests
+- Clean separation between embedded and library code
+- Modern Rust features in `mess_lib` (2024 edition)
 
 ## External Dependencies
-- The `esp` project relies on the `esp-idf` ecosystem. Ensure the ESP-IDF environment is set up correctly.
-- Common crates used include `anyhow`, `serde`, and `embedded-hal`.
+Major dependencies include:
+- Embassy HAL for hardware abstraction
+- ESP-IDF integration
+- Embedded test framework
+- Core async/embedded-io libraries
 
 ## Key Files and Directories
-- `esp/src/main.rs`: Entry point for the embedded application.
-- `mess_lib/src/lib.rs`: Core library functionality.
-- `mess_lib/tests/`: Integration tests for the library.
-- `esp/sdkconfig.defaults`: Default configuration for ESP32.
+- `esp/src/main.rs`: Embedded application entry point
+- `esp/tests/hello_test.rs`: Hardware test implementation
+- `mess_lib/src/lib.rs`: Core library functionality
+- `mess_lib/tests/hello_test.rs`: Library test suite
+- `docs/`: Hardware documentation and diagrams
 
 ## Examples
-- To add a new module to `mess_lib`, create a new file in `src/` and expose it in `lib.rs`:
-  ```rust
-  pub mod new_module;
-  ```
-- To use `mess_lib` in `esp`, add it as a dependency in `Cargo.toml`:
-  ```toml
-  [dependencies]
-  mess_lib = { path = "../mess_lib" }
-  ```
+- To add embedded functionality, extend `esp/src/main.rs`
+- To add shared code, create modules in `mess_lib/src/`
+- For hardware tests, follow patterns in `esp/tests/hello_test.rs`
+- Library tests should be added to `mess_lib/tests/`
 
 ---
 
