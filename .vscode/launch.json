@@ -12,10 +12,12 @@
       "chip": "esp32",
       "coreConfigs": [
         {
-          "programBinary": "${workspaceFolder}/esp/target/xtensa-esp32-none-elf/debug/esp"
+        "programBinary": "${workspaceFolder}/esp/target/xtensa-esp32-none-elf/debug/esp",
+        "rttEnabled": true
         }
       ],
-      "cwd": "${workspaceFolder}/esp"
+      "cwd": "${workspaceFolder}/esp",
+      "consoleLogLevel": "Console"
     }
   ]
 }
