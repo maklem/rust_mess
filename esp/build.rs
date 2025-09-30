@@ -1,8 +1,21 @@
+use embuild::cargo::print_warning;
+
 fn main() {
     linker_be_nice();
     println!("cargo:rustc-link-arg-tests=-Tembedded-test.x");
     // make sure linkall.x is the last linker script (otherwise might cause problems with flip-link)
     println!("cargo:rustc-link-arg=-Tlinkall.x");
+
+    let ssid = option_env!("WIFI_SSID");
+    if ssid.is_none() {
+        print_warning("WIFI_SSID is not set! Connecting to network will not work!");
+        println!("cargo:rustc-env=WIFI_SSID=");
+    }
+    let pass = option_env!("WIFI_PASS");
+    if pass.is_none() {
+        print_warning("WIFI_PASS is not set! Connecting to network will not work!");
+        println!("cargo:rustc-env=WIFI_PASS=");
+    }
 }
 
 fn linker_be_nice() {
