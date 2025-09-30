@@ -32,4 +32,7 @@ jobs:
 
     - name: Build project esp
       working-directory: esp
+      env:
+        WIFI_SSID: dummy
+        WIFI_PASS: dummy
       run: cargo build
