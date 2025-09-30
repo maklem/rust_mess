@@ -10,6 +10,8 @@ rust-version = "1.86"
 name = "esp"
 path = "./src/main.rs"
 test = false
+doctest = false
+bench = false
 
 [[test]]
 harness = false
