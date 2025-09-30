@@ -6,6 +6,7 @@
     holding buffers for the duration of a data transfer."
 )]
 
+use alloc::string::ToString;
 use esp_hal::clock::CpuClock;
 use esp_hal::main;
 use esp_hal::{
@@ -38,7 +39,34 @@ fn main() -> ! {
     esp_alloc::heap_allocator!(size: 64 * 1024);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
-    let _init = esp_wifi::init(timg0.timer0, esp_hal::rng::Rng::new(peripherals.RNG)).unwrap();
+    let wifi_init = esp_wifi::init(timg0.timer0, esp_hal::rng::Rng::new(peripherals.RNG)).unwrap();
+
+    let wifi_ssid = env!("WIFI_SSID").to_string();
+    let wifi_pass = env!("WIFI_PASS").to_string();
+    rprintln!("Connecting to '{ssid}' using '{pass}' ", ssid=wifi_ssid, pass=wifi_pass);
+
+    let wifi_config = esp_wifi::wifi::ClientConfiguration{
+        ssid: wifi_ssid,
+        password: wifi_pass,
+        auth_method: esp_wifi::wifi::AuthMethod::WPA2Personal,
+        channel: None,
+        bssid: None,
+    };
+
+    let (mut wifi_controller, mut _wifi_interfaces) = esp_wifi::wifi::new(&wifi_init, peripherals.WIFI).unwrap();
+
+    let _ = wifi_controller.start();
+
+    let _ = wifi_controller.set_configuration(&esp_wifi::wifi::Configuration::Client(wifi_config));
+    let status = wifi_controller.connect();
+
+    if status.is_err() {
+        let err = status.err().unwrap();
+        rprintln!("Wifi Error: {:?}", err);
+    } else {
+        rprintln!("Wifi connected!");
+    }
+
 
     loop {
         rprintln!("Hello world!");

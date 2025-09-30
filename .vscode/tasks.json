@@ -1,14 +1,33 @@
 {
   "version": "2.0.0",
+  "options": {
+    "envFile": "${workspaceFolder}/.env"
+  },
   "tasks": [
     {
       "label": "Build ESP32",
       "type": "shell",
       "command": "cargo build",
       "options": {
-        "cwd": "${workspaceFolder}/esp" // Specify the working directory here
+        "cwd": "${workspaceFolder}/esp", // Specify the working directory here
+        "env": {
+          "WIFI_SSID": "${input:WIFI_SSID}",
+          "WIFI_PASS": "${input:WIFI_PASS}"
+        }
       },
       "problemMatcher": ["$rustc"]
+    }
+  ],
+  "inputs": [
+    {
+      "id": "WIFI_SSID",
+      "type": "promptString",
+      "description": "WIFI_SSID for ESP to connect to"
+    },
+    {
+      "id": "WIFI_PASS",
+      "type": "promptString",
+      "description": "WIFI_PASS for ESP to connect to"
     }
   ]
 }
