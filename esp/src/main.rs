@@ -14,6 +14,7 @@ use esp_hal::{
     gpio::{Output, OutputConfig, Level},
 };
 use esp_hal::timer::timg::TimerGroup;
+use esp_wifi::wifi::new;
 use rtt_target::rprintln;
 
 #[panic_handler]
@@ -67,6 +68,11 @@ fn main() -> ! {
         rprintln!("Wifi connected!");
     }
 
+    let mut rx_data =  [0u8; 1024];
+    let rx_buffer = smoltcp::socket::tcp::SocketBuffer::new(&mut rx_data as &mut [u8]);
+    let mut tx_data =  [0u8; 1024];
+    let tx_buffer = smoltcp::socket::tcp::SocketBuffer::new(&mut tx_data as &mut [u8]);
+    let connection = smoltcp::socket::tcp::Socket::new(rx_buffer,tx_buffer);
 
     loop {
         rprintln!("Hello world!");
