@@ -14,8 +14,10 @@ use esp_hal::{
     gpio::{Output, OutputConfig, Level},
 };
 use esp_hal::timer::timg::TimerGroup;
-use esp_wifi::wifi::new;
 use rtt_target::rprintln;
+
+use smoltcp::wire::{EthernetAddress, IpCidr};
+use tinymqtt::MqttClient;
 
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo) -> ! {
@@ -27,6 +29,10 @@ extern crate alloc;
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
 esp_bootloader_esp_idf::esp_app_desc!();
+
+fn now() -> smoltcp::time::Instant {
+    return smoltcp::time::Instant::from_micros(Instant::now().duration_since_epoch().as_micros() as i64);
+}
 
 #[main]
 fn main() -> ! {
@@ -54,7 +60,7 @@ fn main() -> ! {
         bssid: None,
     };
 
-    let (mut wifi_controller, mut _wifi_interfaces) = esp_wifi::wifi::new(&wifi_init, peripherals.WIFI).unwrap();
+    let (mut wifi_controller, mut wifi_interfaces) = esp_wifi::wifi::new(&wifi_init, peripherals.WIFI).unwrap();
 
     let _ = wifi_controller.start();
 
@@ -72,10 +78,62 @@ fn main() -> ! {
     let rx_buffer = smoltcp::socket::tcp::SocketBuffer::new(&mut rx_data as &mut [u8]);
     let mut tx_data =  [0u8; 1024];
     let tx_buffer = smoltcp::socket::tcp::SocketBuffer::new(&mut tx_data as &mut [u8]);
-    let connection = smoltcp::socket::tcp::Socket::new(rx_buffer,tx_buffer);
+    let mut socket = smoltcp::socket::tcp::Socket::new(rx_buffer,tx_buffer);
+    socket.set_timeout(Option::Some(smoltcp::time::Duration::from_secs(5)));
 
+    rprintln!("connection state {:?}", socket.state());
+
+    let mut socket_data =  [smoltcp::iface::SocketStorage::EMPTY; 10];
+    let mut socket_set = smoltcp::iface::SocketSet::new(&mut socket_data as &mut [smoltcp::iface::SocketStorage]);
+
+    let iface_config = smoltcp::iface::Config::new(
+        smoltcp::wire::HardwareAddress::Ethernet(
+            EthernetAddress(wifi_interfaces.sta.mac_address()).into()));
+    let mut iface = smoltcp::iface::Interface::new(
+        iface_config,
+        &mut wifi_interfaces.sta,
+        now());
+    iface.update_ip_addrs(|ipaddrs| {
+        ipaddrs.push(IpCidr::new(smoltcp::wire::IpAddress::v4(192,168,178,200), 24)).unwrap()
+    });
+
+    iface
+        .routes_mut()
+        .add_default_ipv4_route(smoltcp::wire::Ipv4Address::new(192, 168, 178, 1))
+        .unwrap();
+
+    rprintln!("connection state {:?}", socket.state());
+/*
+    let mut client: MqttClient<1024> = MqttClient::new();
+    let client_id = "";
+    let mqtt_connect = client.connect(client_id, None).unwrap();
+    let send_stat = socket.send_slice(&mqtt_connect);
+    if send_stat.is_err() {
+        rprintln!("send_stat err = {:?}", send_stat.err().unwrap());
+    }
+*/
+    let tcp_handle = socket_set.add(socket);
     loop {
+        let timestamp = now();
+        iface.poll(timestamp, &mut wifi_interfaces.sta, &mut socket_set);
+
+        let connection = socket_set.get_mut::<smoltcp::socket::tcp::Socket>(tcp_handle);
+
+        if connection.state() == smoltcp::socket::tcp::State::Closed {
+            rprintln!("trying to connect...");
+            let con_stat = connection.connect(
+                iface.context(),
+                (smoltcp::wire::Ipv4Address::new(192,168,178,42), 1337),
+                (smoltcp::wire::Ipv4Address::new(192,168,178,200), 50000)
+            );
+            if con_stat.is_err() {
+                rprintln!("con_stat err = {:?}", con_stat.err().unwrap());
+            }
+        }
+
+
         rprintln!("Hello world!");
+        rprintln!("connection state {:?}", connection.state());
         let delay_start = Instant::now();
         while delay_start.elapsed() < Duration::from_millis(500) {}
         led_pin.set_high();
