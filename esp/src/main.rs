@@ -7,17 +7,19 @@
 )]
 
 use alloc::string::ToString;
-use esp_hal::clock::CpuClock;
-use esp_hal::main;
 use esp_hal::{
-    time::{Duration, Instant},
+    main,
+    clock::CpuClock,
     gpio::{Output, OutputConfig, Level},
+    system::software_reset,
+    time::{Duration, Instant},
+    timer::timg::TimerGroup,
 };
-use esp_hal::timer::timg::TimerGroup;
 use rtt_target::rprintln;
 
 use smoltcp::wire::{EthernetAddress, IpCidr};
-use tinymqtt::MqttClient;
+
+use mess_lib::reset_on_failure_count::ResettingCounter;
 
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo) -> ! {
@@ -34,12 +36,18 @@ fn now() -> smoltcp::time::Instant {
     return smoltcp::time::Instant::from_micros(Instant::now().duration_since_epoch().as_micros() as i64);
 }
 
+fn reset_esp() -> () {
+    software_reset();
+}
+
 #[main]
 fn main() -> ! {
     rtt_target::rtt_init_print!();
 
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
+
+    let mut watchdog = ResettingCounter::new(reset_esp, 10);
 
     let mut led_pin = Output::new(peripherals.GPIO4, Level::High, OutputConfig::default());
 
@@ -71,8 +79,23 @@ fn main() -> ! {
         let err = status.err().unwrap();
         rprintln!("Wifi Error: {:?}", err);
     } else {
-        rprintln!("Wifi connected!");
+        rprintln!("Wifi connecting...");
     }
+
+    loop {
+        let status = wifi_controller.is_connected();
+        if status.is_err() {
+            rprintln!("Connecting failed: {:?}", status.err().unwrap());
+        }else{
+            let connected = status.ok().unwrap();
+            if connected { break; }
+            rprintln!(".");
+            let delay_start = Instant::now();
+            while delay_start.elapsed() < Duration::from_millis(500) {}
+            watchdog.increment_failure();
+        }
+    }
+    watchdog.reset();
 
     let mut rx_data =  [0u8; 1024];
     let rx_buffer = smoltcp::socket::tcp::SocketBuffer::new(&mut rx_data as &mut [u8]);
@@ -133,7 +156,9 @@ fn main() -> ! {
 
 
         rprintln!("Hello world!");
+        rprintln!("Wifi connected: {:?}", wifi_controller.is_connected());
         rprintln!("connection state {:?}", connection.state());
+        
         let delay_start = Instant::now();
         while delay_start.elapsed() < Duration::from_millis(500) {}
         led_pin.set_high();
