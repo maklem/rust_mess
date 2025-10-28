@@ -18,6 +18,7 @@ use esp_hal::{
 use rtt_target::rprintln;
 
 use smoltcp::wire::{EthernetAddress, IpCidr};
+use tinymqtt::MqttClient;
 
 use mess_lib::reset_on_failure_count::ResettingCounter;
 
@@ -47,7 +48,7 @@ fn main() -> ! {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
-    let mut watchdog = ResettingCounter::new(reset_esp, 10);
+    let mut watchdog = ResettingCounter::new(reset_esp, 20);
 
     let mut led_pin = Output::new(peripherals.GPIO4, Level::High, OutputConfig::default());
 
@@ -96,13 +97,13 @@ fn main() -> ! {
         }
     }
     watchdog.reset();
-
+   
     let mut rx_data =  [0u8; 1024];
     let rx_buffer = smoltcp::socket::tcp::SocketBuffer::new(&mut rx_data as &mut [u8]);
     let mut tx_data =  [0u8; 1024];
     let tx_buffer = smoltcp::socket::tcp::SocketBuffer::new(&mut tx_data as &mut [u8]);
     let mut socket = smoltcp::socket::tcp::Socket::new(rx_buffer,tx_buffer);
-    socket.set_timeout(Option::Some(smoltcp::time::Duration::from_secs(5)));
+    socket.set_timeout(Option::Some(smoltcp::time::Duration::from_secs(600)));
 
     rprintln!("connection state {:?}", socket.state());
 
@@ -126,16 +127,64 @@ fn main() -> ! {
         .unwrap();
 
     rprintln!("connection state {:?}", socket.state());
-/*
-    let mut client: MqttClient<1024> = MqttClient::new();
-    let client_id = "";
-    let mqtt_connect = client.connect(client_id, None).unwrap();
-    let send_stat = socket.send_slice(&mqtt_connect);
-    if send_stat.is_err() {
-        rprintln!("send_stat err = {:?}", send_stat.err().unwrap());
-    }
-*/
+
     let tcp_handle = socket_set.add(socket);
+    /* Connect TCP */
+    {
+        let connection = socket_set.get_mut::<smoltcp::socket::tcp::Socket>(tcp_handle);
+        rprintln!("trying to connect...");
+        let con_stat = connection.connect(
+            iface.context(),
+            (smoltcp::wire::Ipv4Address::new(192,168,178,38), 1883),
+            (smoltcp::wire::Ipv4Address::new(192,168,178,200), 50000)
+        );
+        if con_stat.is_err() {
+            rprintln!("con_stat err = {:?}", con_stat.err().unwrap());
+        }
+    }
+
+    /* Establish TCP Connection */
+    loop {
+        let timestamp = now();
+        iface.poll(timestamp, &mut wifi_interfaces.sta, &mut socket_set);
+
+        let connection = socket_set.get_mut::<smoltcp::socket::tcp::Socket>(tcp_handle);
+
+        rprintln!("Establishing... -- Wifi: {:?} -- TCP: {:?}", wifi_controller.is_connected(), connection.state());
+
+        match connection.state() {
+            smoltcp::socket::tcp::State::Closed => {
+                reset_esp();
+            }
+            smoltcp::socket::tcp::State::Established => {
+                break;
+            }
+            _ => {
+                watchdog.increment_failure();
+            }
+        }
+
+        let delay_start = Instant::now();
+        while delay_start.elapsed() < Duration::from_millis(500) {}
+    }    
+
+    /* set up mqtt connection */
+    {
+        let connection = socket_set.get_mut::<smoltcp::socket::tcp::Socket>(tcp_handle);
+
+        let mqtt_auth =("rustesp", "helloworld");
+
+        let mut client: MqttClient<1024> = MqttClient::new();
+        let client_id = "";
+
+        let mqtt_connect = client.connect(client_id, Some(mqtt_auth)).unwrap();
+        rprintln!("connection packet = {:?}", mqtt_connect);
+        let send_stat = connection.send_slice(&mqtt_connect);
+        if send_stat.is_err() {
+            rprintln!("send_stat err = {:?}", send_stat.err().unwrap());
+        }
+    }
+
     loop {
         let timestamp = now();
         iface.poll(timestamp, &mut wifi_interfaces.sta, &mut socket_set);
@@ -143,21 +192,15 @@ fn main() -> ! {
         let connection = socket_set.get_mut::<smoltcp::socket::tcp::Socket>(tcp_handle);
 
         if connection.state() == smoltcp::socket::tcp::State::Closed {
-            rprintln!("trying to connect...");
-            let con_stat = connection.connect(
-                iface.context(),
-                (smoltcp::wire::Ipv4Address::new(192,168,178,42), 1337),
-                (smoltcp::wire::Ipv4Address::new(192,168,178,200), 50000)
-            );
-            if con_stat.is_err() {
-                rprintln!("con_stat err = {:?}", con_stat.err().unwrap());
-            }
+            watchdog.increment_failure();
+        }
+        if connection.may_recv() && connection.can_recv() {
+            let mut data = [0u8; 128];
+            let state = connection.recv_slice( &mut data as &mut [u8]);
+            rprintln!("received {:?}, contents {:?}", state, data);
         }
 
-
-        rprintln!("Hello world!");
-        rprintln!("Wifi connected: {:?}", wifi_controller.is_connected());
-        rprintln!("connection state {:?}", connection.state());
+        rprintln!("Running...      -- Wifi: {:?} -- TCP: {:?}", wifi_controller.is_connected(), connection.state());
         
         let delay_start = Instant::now();
         while delay_start.elapsed() < Duration::from_millis(500) {}
