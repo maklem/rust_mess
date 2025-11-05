@@ -6,16 +6,18 @@
     holding buffers for the duration of a data transfer."
 )]
 
-use alloc::string::ToString;
+use alloc::{format, string::ToString};
 use esp_hal::{
-    main,
+    analog::adc::{Adc, AdcConfig, Attenuation},
     clock::CpuClock,
-    gpio::{Output, OutputConfig, Level},
+    gpio::{Level, Output, OutputConfig},
+    main,
     system::software_reset,
     time::{Duration, Instant},
     timer::timg::TimerGroup,
 };
 use rtt_target::rprintln;
+use nb;
 
 use smoltcp::wire::{EthernetAddress, IpCidr};
 use tinymqtt::MqttClient;
@@ -51,6 +53,11 @@ fn main() -> ! {
     let mut watchdog = ResettingCounter::new(reset_esp, 20);
 
     let mut led_pin = Output::new(peripherals.GPIO4, Level::High, OutputConfig::default());
+
+    let analog_pin = peripherals.GPIO35;
+    let mut adc1_config = AdcConfig::new();
+    let mut input_pin = adc1_config.enable_pin(analog_pin, Attenuation::_11dB);
+    let mut adc1 = Adc::new(peripherals.ADC1, adc1_config);
 
     esp_alloc::heap_allocator!(size: 64 * 1024);
 
@@ -169,12 +176,11 @@ fn main() -> ! {
     }    
 
     /* set up mqtt connection */
+    let mut client: MqttClient<1024> = MqttClient::new();
     {
         let connection = socket_set.get_mut::<smoltcp::socket::tcp::Socket>(tcp_handle);
 
         let mqtt_auth =("rustesp", "helloworld");
-
-        let mut client: MqttClient<1024> = MqttClient::new();
         let client_id = "";
 
         let mqtt_connect = client.connect(client_id, Some(mqtt_auth)).unwrap();
@@ -195,12 +201,48 @@ fn main() -> ! {
             watchdog.increment_failure();
         }
         if connection.may_recv() && connection.can_recv() {
-            let mut data = [0u8; 128];
+            let mut data = [0u8; 256];
             let state = connection.recv_slice( &mut data as &mut [u8]);
-            rprintln!("received {:?}, contents {:?}", state, data);
+            if state.is_ok(){
+                let len = state.ok().unwrap();
+                rprintln!("Received Data: {:?}",  &data[..len] );
+
+                let status = client.receive_packet(&data[..len], |_client, topic, data| {
+                    rprintln!("Received Packet: {:?} {:?}", topic, data);
+                });
+                if status.is_err() {
+                    rprintln!("Error Receiving Packet: {:?}", status.err());
+                }
+                
+            }
         }
 
-        rprintln!("Running...      -- Wifi: {:?} -- TCP: {:?}", wifi_controller.is_connected(), connection.state());
+        let mut pin_value: u16 = 1u16;
+        let adc_value = nb::block!(adc1.read_oneshot(&mut input_pin));
+        if adc_value.is_ok() {
+            pin_value = adc_value.ok().unwrap();
+        } else {
+            rprintln!("Pin Read Error: {:?}", adc_value.err());
+        }
+        let value = pin_value as f32 / 4095.0;
+
+        if client.is_connected() {
+            let payload_str = format!("{:.6e}", value);
+            let payload = payload_str.as_bytes();
+            let publish_bytes = client.publish("sensordata/dev/rustesptest", payload);
+            if publish_bytes.is_err() {
+                rprintln!("Failed to send (assemble): {:?}", publish_bytes.err());
+            } else {
+                let send_status = connection.send_slice(publish_bytes.ok().unwrap());
+                if send_status.is_ok() {
+                    rprintln!("Sent {} = {}", payload_str, pin_value);
+                } else {
+                    rprintln!("Failed to send (connection): {:?}", send_status.err());
+                }
+            }
+        }
+
+        rprintln!("Measured: {:5.2e}      -- Wifi: {:?} -- TCP: {:?}", value, wifi_controller.is_connected(), connection.state());
         
         let delay_start = Instant::now();
         while delay_start.elapsed() < Duration::from_millis(500) {}

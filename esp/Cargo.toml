@@ -29,6 +29,7 @@ opt-level = 2
 default = []
 
 [dependencies]
+nb = "1.1.0"
 esp-bootloader-esp-idf = { version = "0.2.0", features = ["esp32"] }
 esp-hal                = { version = "=1.0.0-rc.0", features = ["esp32", "unstable"] }
 rtt-target = "0.6.1"
