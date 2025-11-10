@@ -8,20 +8,14 @@
 
 use alloc::{format, string::ToString};
 use esp_hal::{
-    analog::adc::{Adc, AdcConfig, Attenuation},
-    clock::CpuClock,
-    gpio::{Level, Output, OutputConfig},
-    main,
-    system::software_reset,
-    time::{Duration, Instant},
-    timer::timg::TimerGroup,
+    clock::CpuClock, gpio::{Level, Output, OutputConfig}, main, system::software_reset, time::{Duration, Instant}, timer::timg::TimerGroup
 };
 use rtt_target::rprintln;
-use nb;
 
 use smoltcp::wire::{EthernetAddress, IpCidr};
 use tinymqtt::MqttClient;
 
+mod analog;
 use mess_lib::reset_on_failure_count::ResettingCounter;
 
 #[panic_handler]
@@ -54,10 +48,7 @@ fn main() -> ! {
 
     let mut led_pin = Output::new(peripherals.GPIO4, Level::High, OutputConfig::default());
 
-    let analog_pin = peripherals.GPIO35;
-    let mut adc1_config = AdcConfig::new();
-    let mut input_pin = adc1_config.enable_pin(analog_pin, Attenuation::_11dB);
-    let mut adc1 = Adc::new(peripherals.ADC1, adc1_config);
+    let mut analog_pin = analog::SingleAnalogInput::new(peripherals.GPIO35, peripherals.ADC1);
 
     esp_alloc::heap_allocator!(size: 64 * 1024);
 
@@ -217,17 +208,16 @@ fn main() -> ! {
             }
         }
 
-        let mut pin_value: u16 = 1u16;
-        let adc_value = nb::block!(adc1.read_oneshot(&mut input_pin));
-        if adc_value.is_ok() {
-            pin_value = adc_value.ok().unwrap();
+        let pin_reading = analog_pin.read();
+        let pin_value = if pin_reading.is_ok() {
+            pin_reading.ok().unwrap()
         } else {
-            rprintln!("Pin Read Error: {:?}", adc_value.err());
-        }
-        let value = pin_value as f32 / 4095.0;
+            rprintln!("Pin Read Error: {:?}", pin_reading.err());
+            0.0
+        };
 
         if client.is_connected() {
-            let payload_str = format!("{:.6e}", value);
+            let payload_str = format!("{:.6e}", pin_value);
             let payload = payload_str.as_bytes();
             let publish_bytes = client.publish("sensordata/dev/rustesptest", payload);
             if publish_bytes.is_err() {
@@ -242,7 +232,7 @@ fn main() -> ! {
             }
         }
 
-        rprintln!("Measured: {:5.2e}      -- Wifi: {:?} -- TCP: {:?}", value, wifi_controller.is_connected(), connection.state());
+        rprintln!("Measured: {:5.2e}      -- Wifi: {:?} -- TCP: {:?}", pin_value, wifi_controller.is_connected(), connection.state());
         
         let delay_start = Instant::now();
         while delay_start.elapsed() < Duration::from_millis(500) {}
