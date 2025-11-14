@@ -12,11 +12,13 @@ use esp_hal::{
 };
 use rtt_target::rprintln;
 
-use smoltcp::wire::{EthernetAddress, IpCidr};
 use tinymqtt::MqttClient;
 
 use mess_lib::reset_on_failure_count::ResettingCounter;
+
 mod analog;
+mod networking;
+mod timeconversion;
 
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo) -> ! {
@@ -28,10 +30,6 @@ extern crate alloc;
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
 esp_bootloader_esp_idf::esp_app_desc!();
-
-fn now() -> smoltcp::time::Instant {
-    return smoltcp::time::Instant::from_micros(Instant::now().duration_since_epoch().as_micros() as i64);
-}
 
 fn reset_esp() -> () {
     software_reset();
@@ -60,57 +58,11 @@ fn main() -> ! {
     /* connect wifi */
     let wifi_ssid = env!("WIFI_SSID").to_string();
     let wifi_pass = env!("WIFI_PASS").to_string();
+    let my_ipv4: [u8; 4] = [192, 168, 178, 200];
     rprintln!("Connecting to '{ssid}' using '{pass}' ", ssid=wifi_ssid, pass=wifi_pass);
 
-    let wifi_config = esp_wifi::wifi::ClientConfiguration{
-        ssid: wifi_ssid,
-        password: wifi_pass,
-        auth_method: esp_wifi::wifi::AuthMethod::WPA2Personal,
-        channel: None,
-        bssid: None,
-    };
-    let _ = wifi_controller.start();
-    let _ = wifi_controller.set_configuration(&esp_wifi::wifi::Configuration::Client(wifi_config));
-    let status = wifi_controller.connect();
-
-    if status.is_err() {
-        let err = status.err().unwrap();
-        rprintln!("Wifi Error: {:?}", err);
-    } else {
-        rprintln!("Wifi connecting...");
-    }
-
-    loop {
-        let status = wifi_controller.is_connected();
-        if status.is_err() {
-            rprintln!("Connecting failed: {:?}", status.err().unwrap());
-        }else{
-            let connected = status.ok().unwrap();
-            if connected { break; }
-            rprintln!(".");
-            let delay_start = Instant::now();
-            while delay_start.elapsed() < Duration::from_millis(500) {}
-            watchdog.increment_failure();
-        }
-    }
-    watchdog.reset();
-   
-   /* configure IPv4 for Wifi */
-    let iface_config = smoltcp::iface::Config::new(
-        smoltcp::wire::HardwareAddress::Ethernet(
-            EthernetAddress(wifi_interfaces.sta.mac_address()).into()));
-    let mut iface = smoltcp::iface::Interface::new(
-        iface_config,
-        &mut wifi_interfaces.sta,
-        now());
-    iface.update_ip_addrs(|ipaddrs| {
-        ipaddrs.push(IpCidr::new(smoltcp::wire::IpAddress::v4(192,168,178,200), 24)).unwrap()
-    });
-
-    iface
-        .routes_mut()
-        .add_default_ipv4_route(smoltcp::wire::Ipv4Address::new(192, 168, 178, 1))
-        .unwrap();
+    networking::wifi_connect_blocking(&mut wifi_controller, wifi_ssid, wifi_pass);
+    let mut iface = networking::wifi_configure_static_network(&mut wifi_interfaces, my_ipv4);
 
     /* Set up TCP socket */
     let mut rx_data =  [0u8; 1024];
@@ -124,14 +76,15 @@ fn main() -> ! {
     let mut socket_set = smoltcp::iface::SocketSet::new(&mut socket_data as &mut [smoltcp::iface::SocketStorage]);
     let tcp_handle = socket_set.add(socket);
 
-    /* Connect TCP */
+    /* Connect to MQTT server */
+    let mqtt_ipv4: [u8; 4] = [192, 168, 178, 38];
     {
         let connection = socket_set.get_mut::<smoltcp::socket::tcp::Socket>(tcp_handle);
         rprintln!("trying to connect...");
         let con_stat = connection.connect(
             iface.context(),
-            (smoltcp::wire::Ipv4Address::new(192,168,178,38), 1883),
-            (smoltcp::wire::Ipv4Address::new(192,168,178,200), 50000)
+            (smoltcp::wire::Ipv4Address::new(mqtt_ipv4[0],mqtt_ipv4[1],mqtt_ipv4[2],mqtt_ipv4[3]), 1883),
+            (smoltcp::wire::Ipv4Address::new(my_ipv4[0],my_ipv4[1],my_ipv4[2],my_ipv4[3]), 50000)
         );
         if con_stat.is_err() {
             rprintln!("con_stat err = {:?}", con_stat.err().unwrap());
@@ -140,7 +93,7 @@ fn main() -> ! {
 
     /* Establish TCP Connection */
     loop {
-        let timestamp = now();
+        let timestamp = timeconversion::smoltcp_now();
         iface.poll(timestamp, &mut wifi_interfaces.sta, &mut socket_set);
 
         let connection = socket_set.get_mut::<smoltcp::socket::tcp::Socket>(tcp_handle);
@@ -183,7 +136,7 @@ fn main() -> ! {
     /* if something breaks, `watchdog` will be notified. It will reset the chip after N failures. */
     loop {
         /* let wifi-hw communicate */
-        let timestamp = now();
+        let timestamp = timeconversion::smoltcp_now();
         iface.poll(timestamp, &mut wifi_interfaces.sta, &mut socket_set);
 
         /* assert wifi is connected */
@@ -194,8 +147,7 @@ fn main() -> ! {
 
         /* assert MQTT is connected */
         let connection = socket_set.get_mut::<smoltcp::socket::tcp::Socket>(tcp_handle);
-
-        if connection.state() == smoltcp::socket::tcp::State::Closed {
+        if connection.state() != smoltcp::socket::tcp::State::Established {
             watchdog.increment_failure();
         }
 
